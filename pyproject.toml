@@ -1,0 +1,15 @@
+[project]
+name = "amlit-speaks"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "fastapi[standard]>=0.135.1",
+    "openai>=2.26.0",
+    "psycopg2-binary>=2.9.11",
+    "pydantic-settings>=2.13.1",
+    "sqlalchemy>=2.0.48",
+    "supabase>=2.28.0",
+]
