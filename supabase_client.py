@@ -1,6 +1,7 @@
 from supabase import create_client
 from config import get_settings
 
+
 settings = get_settings()
 
 supabase = create_client(
@@ -8,6 +9,7 @@ supabase = create_client(
 )
 
 
-def supabase_storage(path, bytes):
-    supabase.storage.from_("audio").upload(path, bytes, {"content-type": "audio/webm"})
+def supabase_storage(path: str, bytes_data: bytes) -> str:
+    supabase.storage.from_("audio").upload(path, bytes_data, {"content-type": "audio/webm"})
     return supabase.storage.from_("audio").get_public_url(path)
+

@@ -6,8 +6,10 @@ from sqlalchemy.orm import Session
 import re
 from bs4 import BeautifulSoup
 from openai import OpenAI
-from supabase import supabase_storage
+from supabase_client import supabase_storage
 import asyncio
+from voice_generate import GenerateVoices
+
 
 settings = get_settings()
 
@@ -20,35 +22,26 @@ model_lookup = {
 }
 
 
-def get_model_instance(object_id: int, object_type: str, db: Session):
+def get_object_instance(object_id: int, object_type: str, db: Session):
     model = model_lookup[object_type]
-    return db.query(model).filter(model.id == object_id).first() or None
-
-
-def audio_url_for_language(lang: str, instance: Base) -> str | None:
-    """Return the audio URL for the given language from a model instance."""
-    column_name = f"audio_url_{lang}"
-    return getattr(instance, column_name, None)
-
-
-def check_if_audio_file_exists(
-    object_id: int, object_type: str, lang: str, db: Session
-) -> str | None:
-    model_instance = get_model_instance(object_id, object_type, db)
-    if model_instance:
-        audio_url = audio_url_for_language(lang, model_instance)
-        return audio_url or None
-
-    else:
-        if settings.development_mode:
-            model_type = model_lookup[object_type]
-            db.add(model_type(id=object_id))
-            db.commit()
-            return None
+    model_instance = db.query(model).filter(model.id == object_id).first()
+    if not model_instance:
+        if settings.use_supabase:
+            db.add(model(id=object_id))
+            db.commit
+            print("new data table created")
+            return db.get(model, object_id)
         else:
-            raise ValueError(
-                f"In production DB: Model {object_type} with id {object_id} does not exist"
+            raise ValidationError(
+                f"Model: {object_type} ID: {object_id} not found in prod database!"
             )
+    return model_instance
+
+
+def check_if_audio_file_exists(object_instance: Base, lang: str) -> str | None:
+    column_name = f"audio_url_{lang}"
+    audio_url = getattr(object_instance, column_name, None)
+    return audio_url or None
 
 
 def parse_html(html: str) -> str:
@@ -62,31 +55,38 @@ def parse_html(html: str) -> str:
     return text
 
 
-async def generate_tts_chunks(contentHTML: str):
+async def generate_http_streaming_tts_chunks(contentHTML: str):
     clean_text = parse_html(contentHTML)
-    async with openai_client.audio.speech.with_streaming_response.create(
-        model="tts-1", voice="alloy", input=clean_text, response_format="webm"
-    ) as response:
-        async for chunk in response.iter_bytes(chunk_size=4096):
-            yield chunk
+    generate_voices = GenerateVoices()
+    return await generate_voices.elevenlabs_http_streaming(clean_text)
 
 
 async def upload_audio_to_storage_and_save(
-    audio_bytes: bytes, object_id: int, object_type: str, lang: str, db: Session
+    audio_bytes: bytes,
+    object_type: str,
+    object_id: int,
+    object_instance: Base,
+    lang: str,
+    db: Session,
 ):
-    storage_path = f"{object_type}/{object_id}/{lang}.webm"
-    if settings.development_mode:
-        # this op is blocking, this threads frees it
-        url = await asyncio.to_thread(supabase_storage, storage_path, audio_bytes)
-    else:
-        url = ""  # amazon s3 -- async operation
-    model_instance = get_model_instance(object_id, object_type, db)
-    if model_instance is None:
-        raise ValueError("Can't find model to save audiofile")
-
     column_name = f"audio_url_{lang}"
-    if not hasattr(model_instance, column_name):
-        raise ValidationError(f"Model has no attribute '{column_name}'")
+    url_path = f"{object_type}/{object_id}/{lang}.opus"
+    if settings.use_supabase:
+        # this op is blocking, this to_thread frees it
+        url = await asyncio.to_thread(supabase_storage, url_path, audio_bytes)
+    else:
+        url = ""  # amazon s3 -- async operation no need for thread
 
-    setattr(model_instance, column_name, url)
+    setattr(object_instance, column_name, url)
     db.commit()
+
+
+# ------------- REFERENCE FOR OPENAI TTS -------------
+
+# async def generate_tts_chunks(contentHTML: str):
+#     clean_text = parse_html(contentHTML)
+#     async with openai_client.audio.speech.with_streaming_response.create(
+#         model="tts-1", voice="alloy", input=clean_text, response_format="webm"
+#     ) as response:
+#         async for chunk in response.iter_bytes(chunk_size=4096):
+#             yield chunk

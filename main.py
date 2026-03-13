@@ -1,19 +1,35 @@
 from fastapi import FastAPI, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from database import get_db
+from sqlalchemy import text
+from database import get_db, engine
 from typing import Literal
+from contextlib import asynccontextmanager
 from functions import (
     model_lookup,
+    get_object_instance,
     check_if_audio_file_exists,
-    generate_tts_chunks,
+    generate_http_streaming_tts_chunks,
     upload_audio_to_storage_and_save,
 )
 import asyncio
 from fastapi import BackgroundTasks
 from fastapi.responses import StreamingResponse
+from fastapi import FastAPI
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        print("✅ DB connected")
+    except Exception as e:
+        print(f"❌ DB connection failed: {e}")
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 ObjectType = Literal[tuple(model_lookup.keys())]
 
@@ -31,8 +47,12 @@ async def text_to_speech(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
+    object_instance = get_object_instance(
+        object_id=body.object_id, object_type=body.object_type, db=db
+    )
+
     audio_url = check_if_audio_file_exists(
-        body.object_id, body.object_type, body.lang, db
+        object_instance=object_instance, lang=body.lang
     )
     if audio_url:
         return {"audio_url": audio_url}
@@ -41,7 +61,7 @@ async def text_to_speech(
     save_queue = asyncio.Queue()
 
     async def add_chunks_to_queues():
-        async for chunk in generate_tts_chunks(body.contentHTML):
+        async for chunk in generate_http_streaming_tts_chunks(body.contentHTML):
             await stream_queue.put(chunk)
             await save_queue.put(chunk)
         # end stream
@@ -62,13 +82,14 @@ async def text_to_speech(
             if chunk is None:
                 break
             chunks.append(chunk)
-        # stream completed
         audio_bytes = b"".join(chunks)
+        # try converting to webM
         await upload_audio_to_storage_and_save(
             audio_bytes=audio_bytes,
-            object_id=body.object_id,
             object_type=body.object_type,
+            object_id=body.object_id,
             lang=body.lang,
+            object_instance=object_instance,
             db=db,
         )
 
