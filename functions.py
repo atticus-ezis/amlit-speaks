@@ -9,6 +9,8 @@ from openai import OpenAI
 from supabase_client import supabase_storage
 import asyncio
 from voice_generate import GenerateVoices
+from sqlalchemy import text
+# from enums import model_lookup
 
 
 settings = get_settings()
@@ -27,10 +29,17 @@ def get_object_instance(object_id: int, object_type: str, db: Session):
     model_instance = db.query(model).filter(model.id == object_id).first()
     if not model_instance:
         if settings.use_supabase:
-            db.add(model(id=object_id))
-            db.commit
-            print("new data table created")
-            return db.get(model, object_id)
+            try:
+                db.execute(
+                    text("SET LOCAL statement_timeout = 0")
+                )  # disable timeout for this transaction
+                db.add(model(id=object_id))
+                db.commit()
+                db.refresh(model_instance := db.get(model, object_id))
+                return model_instance
+            except Exception as e:
+                db.rollback()
+                raise e
         else:
             raise ValidationError(
                 f"Model: {object_type} ID: {object_id} not found in prod database!"
@@ -58,7 +67,8 @@ def parse_html(html: str) -> str:
 async def generate_http_streaming_tts_chunks(contentHTML: str):
     clean_text = parse_html(contentHTML)
     generate_voices = GenerateVoices()
-    return await generate_voices.elevenlabs_http_streaming(clean_text)
+    async for chunk in generate_voices.elevenlabs_http_streaming(clean_text):
+        yield chunk
 
 
 async def upload_audio_to_storage_and_save(

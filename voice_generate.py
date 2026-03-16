@@ -3,16 +3,10 @@ from elevenlabs import VoiceSettings
 from elevenlabs.play import play
 from config import get_settings
 import asyncio
+from enums import stream_media_type, audio_formats, elevenlabs_voices
+# from enums import elevenlabs_voices
 
 settings = get_settings()
-
-elevenlabs_voices = {
-    "test": "21m00Tcm4TlvDq8ikWAM",
-    "alt-3": "UmQN7jS1Ee8B1czsUtQh",
-    "alt-2": "4dZr8J4CBeokyRkTRpoN",
-    "alt-1": "fjnwTZkKtQOJaYzGLa6n",
-    "default": "fnYMz3F5gMEDGMWcH1ex",  # life-time ownership
-}
 
 
 class GenerateVoices:
@@ -24,10 +18,10 @@ class GenerateVoices:
     async def test_async_http_streaming(
         self,
         text: str,
-        model_id: str = "eleven_multilingual_v2",
+        model_id: str = "eleven_flash_v2",
     ):
         async for chunk in self.elevenlabs.text_to_speech.stream(
-            voice_id="21m00Tcm4TlvDq8ikWAM",
+            voice_id=elevenlabs_voices["test"],
             model_id=model_id,
             text=text,
         ):
@@ -37,14 +31,14 @@ class GenerateVoices:
         self,
         text: str,
         voice_id: str = "test",
-        model_id: str = "eleven_multilingual_v2",
+        model_id: str = "eleven_flash_v2",
     ):
         voice_id = elevenlabs_voices[voice_id]
         async for chunk in self.elevenlabs.text_to_speech.stream(
             voice_id=voice_id,
             model_id=model_id,
             text=text,
-            output_format="opus_48000_64",  # half storage space
+            output_format=audio_formats[stream_media_type],  # half storage space
             # ------------- voice_settings -------------
             # voice_settings=VoiceSettings(
             #     stability=0.5,
