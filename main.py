@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -45,6 +45,7 @@ class TextToSpeechCall(BaseModel):
 @app.post("/api/v1/text-to-speech/")
 async def text_to_speech(
     body: TextToSpeechCall,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     object_instance = get_object_instance(
@@ -81,26 +82,25 @@ async def text_to_speech(
                 raise chunk
             yield chunk
 
-    # async def save_chunks():
-    #     chunks = []
-    #     while True:
-    #         chunk = await save_queue.get()
-    #         if chunk is None:
-    #             break
-    #         chunks.append(chunk)
-    #     audio_bytes = b"".join(chunks)
-    #     # try converting to webM
-    #     await upload_audio_to_storage_and_save(
-    #         audio_bytes=audio_bytes,
-    #         object_type=body.object_type,
-    #         object_id=body.object_id,
-    #         lang=body.lang,
-    #         object_instance=object_instance,
-    #         db=db,
-    #     )
+    async def save_chunks():
+        chunks = []
+        while True:
+            chunk = await save_queue.get()
+            if chunk is None:
+                break
+            chunks.append(chunk)
+        audio_bytes = b"".join(chunks)
+        # saving is failing
+        await upload_audio_to_storage_and_save(
+            audio_bytes=audio_bytes,
+            object_type=body.object_type,
+            object_id=body.object_id,
+            lang=body.lang,
+            object_instance=object_instance,
+        )
 
     asyncio.create_task(add_chunks_to_queues())
-    # asyncio.create_task(save_chunks())
+    background_tasks.add_task(save_chunks)
 
     return StreamingResponse(stream_chunks(), media_type=stream_media_type)
 

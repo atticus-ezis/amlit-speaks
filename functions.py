@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 import re
 from bs4 import BeautifulSoup
 from openai import OpenAI
-from supabase_client import supabase_storage
 import asyncio
 from voice_generate import GenerateVoices
 from sqlalchemy import text
-# from enums import model_lookup
+from supabase import create_client
+from enums import stream_media_type
 
 
 settings = get_settings()
@@ -53,6 +53,7 @@ def check_if_audio_file_exists(object_instance: Base, lang: str) -> str | None:
     return audio_url or None
 
 
+# remove /n and replace with .
 def parse_html(html: str) -> str:
     """Parse the HTML and return the text."""
     soup = BeautifulSoup(html, "html.parser")
@@ -77,18 +78,44 @@ async def upload_audio_to_storage_and_save(
     object_id: int,
     object_instance: Base,
     lang: str,
-    db: Session,
 ):
+    print("running save and upload")
+    from database import SessionLocal
+
     column_name = f"audio_url_{lang}"
     url_path = f"{object_type}/{object_id}/{lang}.opus"
     if settings.use_supabase:
         # this op is blocking, this to_thread frees it
         url = await asyncio.to_thread(supabase_storage, url_path, audio_bytes)
+        # url = "https://irsgiycezqtbsiialijx.supabase.co/storage/v1/object/public/amlit-audio/chapter/1/en.opus"
     else:
         url = ""  # amazon s3 -- async operation no need for thread
 
-    setattr(object_instance, column_name, url)
-    db.commit()
+    print("url path: ", url_path)
+    session = SessionLocal()
+    try:
+        model = model_lookup[object_type]
+        object_instance = session.get(model, object_id)
+        print("object instance: ", object_instance)
+        if object_instance:
+            setattr(object_instance, column_name, url)
+            session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+
+def supabase_storage(url_path: str, audio_bytes: bytes) -> str:
+    supabase = create_client(
+        settings.supabase_project_url, settings.supabase_service_role_key
+    )
+    # this is failing
+    supabase.storage.from_("amlit-audio").upload(
+        url_path, audio_bytes, {"content-type": stream_media_type}
+    )
+    return supabase.storage.from_("amlit-audio").get_public_url(url_path)
 
 
 # ------------- REFERENCE FOR OPENAI TTS -------------
