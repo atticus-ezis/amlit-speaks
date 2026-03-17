@@ -9,7 +9,6 @@ class Settings(BaseSettings):
     supabase_service_role_key: str
     supabase_project_url: str
     elevenlabs_api_key: str
-    supabase_direct_connection_url: str
 
     class Config:
         env_file = ".env"

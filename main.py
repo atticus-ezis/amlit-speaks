@@ -115,7 +115,10 @@ async def health_check():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # origins that can call your API
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:8000",
+    ],  # origins that can call your API
     allow_credentials=True,
     allow_methods=["*"],  # GET, POST, etc.
     allow_headers=["*"],  # request headers
