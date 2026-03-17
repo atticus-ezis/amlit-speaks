@@ -11,6 +11,7 @@ from functions import (
     check_if_audio_file_exists,
     generate_http_streaming_tts_chunks,
     upload_audio_to_storage_and_save,
+    convert_to_opus,
 )
 import asyncio
 from fastapi.responses import StreamingResponse
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI):
         print("✅ DB connected")
     except Exception as e:
         print(f"❌ DB connection failed: {e}")
+        raise
     yield
 
 
@@ -90,9 +92,10 @@ async def text_to_speech(
                 break
             chunks.append(chunk)
         audio_bytes = b"".join(chunks)
-        # saving is failing
+        opus_bytes = await asyncio.to_thread(convert_to_opus, audio_bytes)
+        ##### CONVERT TO OPUS
         await upload_audio_to_storage_and_save(
-            audio_bytes=audio_bytes,
+            audio_bytes=opus_bytes,
             object_type=body.object_type,
             object_id=body.object_id,
             lang=body.lang,

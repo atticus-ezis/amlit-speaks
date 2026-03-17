@@ -118,6 +118,44 @@ def supabase_storage(url_path: str, audio_bytes: bytes) -> str:
     return supabase.storage.from_("amlit-audio").get_public_url(url_path)
 
 
+def convert_to_opus(audio_bytes: bytes) -> bytes:
+    """
+    Convert audio bytes to Opus format using ffmpeg.
+    Input can be various formats (Ogg, WebM, WAV, MP3, etc.); ffmpeg auto-detects.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_path = os.path.join(temp_dir, "input.mp3")
+        output_path = os.path.join(temp_dir, "output.opus")
+
+        with open(input_path, "wb") as f:
+            f.write(audio_bytes)
+
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",  # overwrite output
+                "-i",
+                input_path,
+                "-c:a",
+                "libopus",
+                "-b:a",
+                "128k",
+                "-f",
+                "opus",
+                output_path,
+            ],
+            check=True,
+            capture_output=True,
+        )
+
+        with open(output_path, "rb") as f:
+            return f.read()
+
+
 # ------------- REFERENCE FOR OPENAI TTS -------------
 
 # async def generate_tts_chunks(contentHTML: str):

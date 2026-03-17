@@ -8,9 +8,7 @@ engine = create_engine(
     pool_pre_ping=True,
     connect_args={"options": "-c statement_timeout=30000"},
 )
-engine_direct = create_engine(
-    settings.supabase_direct_connection_url, pool_pre_ping=True
-)
+
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
