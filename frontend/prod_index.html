@@ -1,0 +1,179 @@
+<!-- run with... -->
+<!--python -m http.server 3000-->
+
+<script>
+  // hide media player if browser doesn't support
+  if (!window.MediaSource) {
+    const hideContainer = () => {
+      const container = document.getElementById("tts-container");
+      if (container) container.style.display = "none";
+    };
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", hideContainer);
+    } else {
+      hideContainer();
+    }
+  }
+
+  // download audio
+  async function playAudioDownload(response, player, status) {
+    console.log("playing audio download");
+    const { audio_url } = await response.json();
+    if (audio_url) {
+      player.src = audio_url;
+      player.hidden = false;
+      player.play();
+      status.textContent = "Playing";
+    } else {
+      throw new Error("expected audio_url for application/json content type");
+    }
+  }
+
+  async function playAudio() {
+    const status = document.getElementById("tts-status");
+    const btn = document.getElementById("tts-btn");
+    const player = document.getElementById("tts-player");
+    const contentHTML = document.getElementById("tts-text-content").innerHTML;
+
+    // exit early if no content
+    if (contentHTML === "") {
+      throw new Error("no content to play");
+      return;
+    }
+
+    const healthCheckResponse = await fetch("http://66.179.137.238:8080/api/v1/health-check/", {
+      method: "GET",
+    });
+    if (!healthCheckResponse.ok) {
+      throw new Error("health check failed. server is offline.");
+      return;
+    }
+
+    const object_id = 1;
+    const object_type = "chapter";
+    // check if audio file exists or needs to be streamed
+    const response = await fetch("http://66.179.137.238:8080/api/v1/text-to-speech/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ object_id, object_type, contentHTML, lang: "en" }),
+    });
+    console.log("response: ", response);
+    const contentType = response.headers.get("Content-Type");
+    console.log("contentType: ", contentType);
+    // download
+    if (contentType === "application/json") {
+      playAudioDownload(response, player, status);
+    } else if (contentType.includes("audio/")) {
+      playAudioStreaming(response, player, status, contentType);
+    } else {
+      throw new Error("unexpected content type: " + contentType);
+    }
+  }
+
+  async function playAudioStreaming(response, player, status, contentType) {
+    // connect MediaSource, contentType and player
+    console.log("playing audio streaming");
+    const mediaSource = new MediaSource();
+    player.src = URL.createObjectURL(mediaSource);
+    player.hidden = false;
+    // wire MediaSource
+    mediaSource.addEventListener("sourceopen", async () => {
+      let sourceBuffer;
+      try {
+        sourceBuffer = mediaSource.addSourceBuffer(contentType);
+      } catch (e) {
+        status.textContent = "Unsupported format: " + contentType;
+        console.error("addSourceBuffer failed:", e);
+        return;
+      }
+
+      const reader = response.body.getReader();
+      let isFirstChunk = true;
+
+      const processChunks = async () => {
+        try {
+          const { done, value } = await reader.read();
+          console.log("chunk - done:", done, "bytes:", value?.byteLength);
+
+          if (done) {
+            try {
+              if (!sourceBuffer.updating) mediaSource.endOfStream();
+              else
+                sourceBuffer.addEventListener(
+                  "updateend",
+                  () => {
+                    try {
+                      mediaSource.endOfStream();
+                    } catch (_) {}
+                  },
+                  { once: true },
+                );
+            } catch (e) {
+              console.error("endOfStream failed:", e);
+            }
+            return;
+          }
+
+          if (sourceBuffer.updating) {
+            await new Promise((r) => sourceBuffer.addEventListener("updateend", r, { once: true }));
+          }
+
+          try {
+            sourceBuffer.appendBuffer(value);
+          } catch (e) {
+            status.textContent = "Append error: " + e.message;
+            console.error("appendBuffer failed:", e);
+            reader.cancel().catch(() => {});
+            return;
+          }
+
+          sourceBuffer.addEventListener(
+            "updateend",
+            () => {
+              console.log("updateend");
+              if (isFirstChunk) {
+                isFirstChunk = false;
+                player.play().catch((e) => console.error("play error:", e, "player error:", player.error));
+              }
+              processChunks();
+            },
+            { once: true },
+          );
+        } catch (e) {
+          status.textContent = "Stream error: " + e.message;
+          console.error("processChunks error:", e);
+          reader.cancel().catch(() => {});
+          try {
+            mediaSource.endOfStream();
+          } catch (_) {}
+        }
+      };
+      processChunks();
+    });
+  }
+</script>
+
+<div class="tts" id="tts-container">
+  <div class="tts-top">
+    <div class="tts-title">
+      <strong>Text-to-speech</strong>
+      <div class="tts-status" id="tts-status">Click 'Read to me' to generate audio.</div>
+    </div>
+    <button id="tts-btn" type="button" onclick="playAudio()">Read to me</button>
+  </div>
+  <audio id="tts-player" controls hidden></audio>
+</div>
+<h1>This is the live server</h1>
+
+<div id="tts-text-content">
+  <p>
+    DUNCAN, King of Scotland<br />\n MACBETH, Thane of Glamis and Cawdor, a general in the King's army<br />\n LADY
+    MACBETH, his wife<br />\n MACDUFF, Thane of Fife, a nobleman of Scotland<br />\n LADY MACDUFF, his wife<br />\n
+    MALCOLM, elder son of Duncan<br />\n DONALBAIN, younger son of Duncan<br />\n BANQUO, Thane of Lochaber, a general
+    in the King's army<br />\n FLEANCE, his son<br />\n LENNOX, nobleman of Scotland<br />\n ROSS, nobleman of
+    Scotland<br />\n MENTEITH nobleman of Scotland<br />\n ANGUS, nobleman of Scotland<br />\n CAITHNESS, nobleman of
+  </p>
+  \n\n
+  <p>SCENE: Scotland and England</p>
+  \n ",
+</div>
