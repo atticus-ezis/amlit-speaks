@@ -1,5 +1,3 @@
-This is the Audio Streaming feature for Amlit.
-
 # Optimize streaming
 
 I'm hard-capped at 6 concurrent streams through elevenlabs turbo_flash_v2.

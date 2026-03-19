@@ -21,7 +21,7 @@ class GenerateVoices:
         model_id: str = "eleven_flash_v2",
     ):
         async for chunk in self.elevenlabs.text_to_speech.stream(
-            voice_id=elevenlabs_voices["test"],
+            voice_id=elevenlabs_voices["alt-3"],
             model_id=model_id,
             text=text,
         ):
@@ -30,10 +30,10 @@ class GenerateVoices:
     async def elevenlabs_http_streaming(
         self,
         text: str,
-        voice_id: str = "test",
+        voice_name: str = "alt-3",
         model_id: str = "eleven_flash_v2",
     ):
-        voice_id = elevenlabs_voices[voice_id]
+        voice_id = elevenlabs_voices[voice_name]
         async for chunk in self.elevenlabs.text_to_speech.stream(
             voice_id=voice_id,
             model_id=model_id,
